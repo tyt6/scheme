@@ -10,13 +10,13 @@
 (defmethod source-file-type ((c acl-file) (s module)) "lisp")
 
 (defsystem scheme
-  :author "scheme"
+  :author "tyt6"
   :licence "BSD"
   :default-component-class acl-file
   :components ((:file "scheme")
                )
   :version "0.0.1"
-  :depends-on (fare-matcher cl-ppcre)
+  :depends-on (fare-matcher cl-ppcre fare-utils)
   :perform (load-op :after (op scheme)
                     (pushnew :scheme cl:*features*)))
 

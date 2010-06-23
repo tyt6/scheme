@@ -1,6 +1,7 @@
 ;; -*- mode:lisp; encoding:utf-8; package: :scheme.test -*-
 ;;! /usr/bin/sbcl --noinform --load ~/share/lib/lisp/scheme/test.lisp
 
+(require 'fare-utils)
 (require 'fare-matcher)
 (require 'cl-ppcre)
 (require 'scheme)
@@ -147,25 +148,28 @@
       (cons* x1 x2 y1 y2 res1)))
 
 ;; umatch
-(test* "umatch" 2
-       (umatch '("str" b)
-         ( ("st".  xs)  1)
-         ( ("str".  xs)  2)
-	 (_ t)))
+(is 2
+    (umatch '("str" b)
+      ( ("st".  xs)  1)
+      ( ("str".  xs)  2)
+      (_ t)))
 
- (test* "umatch1" 2
-       (umatch '(sym b)
-         ( ('sy .  xs)  1)
-         ( ('sym .  xs)  2)
-	 (_ t)))
+(is 2
+     (umatch '(sym b)
+       ( ('sy .  xs)  1)
+       ( ('sym .  xs)  2)
+       (_ t)))
 
-(test* "umatch2" 2
-       (umatch '(12345678 b)
-         ( (1234567 .  xs)  1)
-         ( (12345678 .  xs)  2)
-	 (_ t)))
+(is 2
+    (umatch '(12345678 b)
+      ( (1234567 .  xs)  1)
+      ( (12345678 .  xs)  2)
+      (_ t)))
 
-(is (list 'a 'b) (umatch '( a b ) ( ((? symbol? a) (? symbol? b)) (list a b))))
+(is (list 'a 'b)
+    (umatch '( a b )
+      ( ((? symbol? a) (? symbol? b))
+        (list a b))))
 
 ;;(let1 ht (make-hash-table)
 ;;  (match ht
@@ -204,3 +208,15 @@
 (is nil ;; '(1 3)
     (umatch (make-instance 'bar :x 1 :y 2 :z 3)
       ((accessor* (foo-x a) (bar-z b)) (list a b))))
+
+;; inline aif
+(defun test222(x)
+  (scheme-test-function x))
+
+(defun test223(x)
+  (scheme-test-function2 x))
+
+(is '(100 100) (test222 100))
+(is nil (test222 nil))
+(is '(12 12) (test223 12))
+(is nil (test223 nil))

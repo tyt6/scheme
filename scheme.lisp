@@ -35,14 +35,17 @@
 (defpackage :scheme
   (:use :common-lisp :fare-matcher
         )
+  (:import-from :fare-utils with-gensyms)
   (:export
    #:+eof-object+
 
    #:^
    ;; control
    #:if-bind #:aif #:when-bind #:awhen #:and-bind #:aand
-   
+   #:dolist-do
    ;;
+   #:macroexpand-recursive
+   #:defun-expand  #:defun-inline
    #:defun-alias #:defun-alias-scheme
    #:expand-home
    
@@ -61,14 +64,16 @@
    #:file->sexp-list #:file->string-list
 
    ;; util.match
-   #:umatch
+   #:umatch #:letl
 
    ;; srfi
    ;; LIST
    #:proper-list? #:dotted-list? #:circular-list?
    #:iota
    #:cons*  #:circular-list
-   #:take #:drop #:reverse! #:filter #:list-ref
+   #:take #:take*
+   #:drop #:reverse! #:filter #:list-ref
+   #:take-while
 
    ;; 13
    #:string-append 
@@ -92,13 +97,19 @@
    ;; haskell
    #:nub
    #:const
+   #:==
+   #:/==
+
+   ;; for testing
+   #:scheme-test-function
+   #:scheme-test-function2
    ))
 
 ;; --------------------------------
 (common-lisp:in-package :scheme)
 
 (eval-when (:compile-toplevel :execute :load-toplevel)
-  (proclaim '(optimize (speed 0)(safety 0) (debug 0) (compilation-speed 0) (space 0)))
+  (proclaim '(optimize (speed 0)(safety 0) (debug 3) (compilation-speed 3) (space 0)))
   ;; Constatns
   (defconstant +hash-table-size+ 16)
   (defconstant +eof-object+ :eof)
@@ -162,6 +173,26 @@
     `(progn
        (setf (fdefinition ',name) (SYMBOL-FUNCTION ,FUNC)) ;;汎用的な方法を選んだ
        ))
+  
+  ;;(let ((lis (iota 1000000)))
+  ;;  (time (dotimes (i 10000) (listp  lis)))
+  ;;  (time (dotimes (i 10000) (consp  lis))))
+  (defun macroexpand-recursive (lis)
+    (cond ((consp lis)
+           ;; listp is better but a little bit slow
+           (macroexpand (cons (car lis) (mapcar #'macroexpand-recursive (cdr lis)))))
+          (t lis)))
+  
+  (defmacro defun-expand  (name vars &body body)
+    ;;(print (mapcar #'macroexpand-recursive body))
+    `(defun ,name ,vars
+       ,@(mapcar #'macroexpand-recursive body)))
+  
+  (defmacro defun-inline (name vars &body body)
+    `(progn
+       (declaim (inline ,name))
+       (defun-expand ,name ,vars ,@body)))
+  
   (defun expand-home(path)
     (merge-pathnames path (user-homedir-pathname)))
 
@@ -176,7 +207,7 @@
                             )
        ,@body))
 
-  (defmacro with-output-file ((port path &rest options &key (element-type 'base-char) if-exists if-does-not-exist)
+  (defmacro with-output-file ((port path &rest options &key (element-type 'base-char) (if-exists :supersede) if-does-not-exist)
                               &body body)
     (declare (ignorable  options))
     `(with-open-file (,port ,path :direction :output :element-type ',(intern (symbol-name element-type))
@@ -184,7 +215,7 @@
                             ,@(if if-does-not-exist (list :if-exists if-does-not-exist) '())
                             )
        (if ,port
-           ,@body
+           (progn ,@body)
            (throw :file-open-error nil))))
   ;; --------------------------------
   ;; this is not a scheme's one
@@ -284,6 +315,7 @@
     (eq o +eof-object+))
   
   (defun file->list (reader path)
+    (declare (type string path))
     (let (ret)
       (declare (type list ret))
       (with-input-file (port path)
@@ -303,29 +335,37 @@
     (file->list #'read-line path))
 
   (defun make-umatch-pattern (x)
-    (cond ((and (listp x) (symbol-eq-without-package (car x) '?) (>= (length x) 3))
-           `(,(intern (symbol-name 'and)) ,(caddr x) (,(intern (symbol-name 'when)) (,(cadr x) ,(caddr x) ,@(cdddr x)))))
-          ((and (consp x) (consp (cdr x)) (symbolp (car x)) (eq (car x) (intern (symbol-name 'quote))))
-           (cadr x))
-          ((consp x)
-           (cond ((proper-list? x) `(,(intern (symbol-name 'list)) ,@(mapcar #'make-umatch-pattern x)))
-                 (t (list (intern (symbol-name 'cons)) (make-umatch-pattern (car x)) (make-umatch-pattern (cdr x))))))
-          ((stringp x)
-           (let ((%g (gensym "umatch")))
-             `(,(intern (symbol-name 'and))
-                ,%g (,(intern (symbol-name 'when))
-                      (,(intern (symbol-name 'string=)) ,%g ,x)
-                      ))))
-          ((vectorp x)
-           (list* (intern (symbol-name 'vector))
-                  (map 'list #'make-umatch-pattern x)))
-          ((numberp x)
-           (let ((%g (gensym "umatch")))
-             `(,(intern (symbol-name 'and))
-                ,%g (,(intern (symbol-name 'when))
-                      (,(intern (symbol-name '=)) ,%g ,x)
-                      ))))
-          (t  x)))
+    (cond  ;; ((and (consp x) (eq (car x) (slot*) ))
+           ;;  ) ;; this must be recursive!
+           ((and (listp x) (symbol-eq-without-package (car x) '?) (>= (length x) 3))
+            `(,(intern (symbol-name 'and)) ,(caddr x) (,(intern (symbol-name 'when)) (,(cadr x) ,(caddr x) ,@(cdddr x)))))
+           ((and (consp x) (consp (cdr x))
+                 (symbolp (car x))
+                 (symbol-eq-without-package (car x)'quote))
+            (let ((%g (gensym "umatch")))
+              `(,(intern (symbol-name 'and))
+                 ,%g (,(intern (symbol-name 'when))
+                       (,(intern (symbol-name 'eq)) ,%g ,x)
+                       ))))
+           ((consp x)
+            (cond ((proper-list? x) `(,(intern (symbol-name 'list)) ,@(mapcar #'make-umatch-pattern x)))
+                  (t (list (intern (symbol-name 'cons)) (make-umatch-pattern (car x)) (make-umatch-pattern (cdr x))))))
+           ((stringp x)
+            (let ((%g (gensym "umatch")))
+              `(,(intern (symbol-name 'and))
+                 ,%g (,(intern (symbol-name 'when))
+                       (,(intern (symbol-name 'string=)) ,%g ,x)
+                       ))))
+           ((vectorp x)
+            (list* (intern (symbol-name 'vector))
+                   (map 'list #'make-umatch-pattern x)))
+           ((numberp x)
+            (let ((%g (gensym "umatch")))
+              `(,(intern (symbol-name 'and))
+                 ,%g (,(intern (symbol-name 'when))
+                       (,(intern (symbol-name '=)) ,%g ,x)
+                       ))))
+           (t  x)))
 
   ;; like gauche's util.match
   (defmacro umatch ( expr &body clause)
@@ -333,10 +373,13 @@
       (dolist (e clause (macroexpand `(fare-matcher::match ,expr ,@(nreverse ret))))
         (push (cons (make-umatch-pattern (car e)) (cdr e)) ret))))
 
+  ;; 
+  (defmacro letl (pattern val &body body)
+    (macroexpand `(fare-matcher:letm ,(make-umatch-pattern pattern) ,val .,body)))
+
   ;; --------------------------------
   ;; srfi-1
   (defun-alias-scheme cons* list*)
-
   (defun length* (lis)
     (declare (optimize (speed 3) (safety 0) (debug 0) (compilation-speed 0) (space 0)))
     (letp lp ((slow lis)
@@ -384,24 +427,33 @@
     (declare (type sequence lis))
     (subseq lis 0 n))
 
+  (defun take* (n lis &optional fill padding)
+    (declare (type sequence lis))
+    (if (<= (length lis) n)
+        lis
+        (subseq lis 0 n)))
+  
   (defun drop (n lis)
     (declare (type sequence lis))
+    ;; (nthcdr 2 '(1 2 3 4))
     (subseq lis n))
 
   (defun filter (pred lst)
     (declare (type sequence lst))
     (remove-if-not pred lst))
+
+  ;; remove is a common lisp function
   
   (defun-alias-scheme reverse! nreverse)
 
   (defun list-ref(lis n)
-    (declare (type list lis))
-    (do ((lis lis (cdr lis))
-         (n n (- n 1)))
-        ((<= n 0) (car lis))
-      (declare (type list lis) (type fixnum n))))
+    (nth n lis))
 
-  
+  (defun take-while (pred lis)
+    (do ((ret '() (cons (car lis) ret))
+         (lis lis (cdr lis)))
+        ((not (and lis (funcall pred (car lis))))
+         (nreverse ret))))
 
   ;;srfi-13
   (defun string-append (&rest args)
@@ -472,18 +524,20 @@
   
   (defmacro rxmatch-if ((reg str) result then &body else)
     (declare (optimize (speed 0)(safety 0)(debug 0) (compilation-speed 0) (space 0)))
-    (fare-utils::with-gensyms (%str  %sts %ens %start %end)
-      `(let* ((,%str ,str))
-         (multiple-value-bind (,%start ,%end ,%sts ,%ens) (rxbase ,reg ,%str)
-           (if ,%start
-               (let ,(let ((sexp (mapcar (lambda (var i) `(,var (if-bind it (aref ,%sts ,i) (subseq ,%str it (aref ,%ens ,i)))))
-                                         (cdr result) (iota (length (cdr result))))))
-                          (if (symbol-eq-without-package (car result) '_)
-                              sexp
-                              (cons `(,(car result) (subseq ,%str ,%start ,%end))
-                                    sexp)))
-                 ,then)
-               ,@else)))))
+    (with-gensyms (%str  %sts %ens %start %end)
+      (let1 result? (symbol-eq-without-package (car result) '_)
+        `(let* ((,%str ,str))
+           (multiple-value-bind (,%start ,%end ,%sts ,%ens) (rxbase ,reg ,%str)
+             ,@(if result? `((declare (ignorable ,%end))) nil)
+             (if ,%start
+                 (let ,(let ((sexp (mapcar (lambda (var i) `(,var (if-bind it (aref ,%sts ,i) (subseq ,%str it (aref ,%ens ,i)))))
+                                           (cdr result) (iota (length (cdr result))))))
+                            (if result?
+                                sexp
+                                (cons `(,(car result) (subseq ,%str ,%start ,%end))
+                                      sexp)))
+                   ,then)
+                 ,@else))))))
 
   ;; --------------------------------
   
@@ -498,10 +552,9 @@
     (declare (optimize (speed 3) (safety 0) (debug 0) (compilation-speed 0) (space 0))
              )
     (let ((ret '()))
-      (maphash (lambda (k v)
-                 (push (cons k v) ret))
-               ht)
-      (nreverse ret)))
+      (maphash (^ (k v) (push (cons k v) ret)) ht)
+      ;;(nreverse ret)
+      ret))
 
   (defun hash-table-keys (ht &optional order)
     (declare (optimize (speed 3) (safety 0) (debug 0) (compilation-speed 0) (space 0))
@@ -523,5 +576,18 @@
   
   (defmacro const (x)
     `(lambda (&rest args) (declare (ignorable args)) ,x))
+
+  ;; generic == 
+  (defun-alias-scheme == equal)
+  (defun /== (a b)
+    (not (equal a b)))
+
+  ;; test
+  (declaim (inline scheme-test-function))
+  (defun-expand scheme-test-function (x)
+    (aif x (list it x)))
+  
+  (defun-inline scheme-test-function2 (x)
+    (aif x (list it x)))
 
   )
