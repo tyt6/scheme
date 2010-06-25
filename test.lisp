@@ -130,7 +130,7 @@
  (with-output-to-string (out)
    (display "test" out)))
 
-;; displaying symbol is case-issensitive
+;; displaying symbol is not case-sensitive
 ;; and complex number's format is #C(x y).
 (is
  "(test 'TESTS TESTK 1 1.1 1/4 #C(1 2))"
@@ -140,7 +140,6 @@
 ;;(display '("test" 'tests :testk 1 1.1 1/4 1+2i)) => "(test 'tests testk 1 1.1 1/4 1.0+2.0i)"
 
 (is t (symbol? 'eq))
-;; this is not keywordp
 (is nil (symbol? :eq))
 (is t (eq (symbol? :eq) (not (symbolp :eq))))
 
@@ -157,16 +156,17 @@
 (is  "(1 test TESTK TESTS #C(1 2))" (x->string '(1 "test" :testk tests #c(1 2))))
 
 (is  "(1 test TESTK TESTS #C(1 2))" (x->string '(1 "test" :testk tests #c(1 2))))
-;; string->symbol  is case-sensitive
+
+;; (eq? '|it| (string->symbol "it")) => #t
 (is  '|it| (string->symbol "it"))
 (is 'IT (string->symbol "IT"))
 
 ;; this is not good symbol->string take 2nd argument
 (is nil (eq 'it (string->symbol "IT" :scheme)))
 
-;; symbol->string
-;; is case-insensitive & this can take keywords.
+;; symbol->string is case-insensitive & this can take keywords.
 (is "TEST" (symbol->string 'test))
+
 ;; (is 'is-b-test-exception (symbol->string :test))
 
 
@@ -219,7 +219,7 @@
       (cons x y)))
 
 ;; This pattern is not match. Because of pattern is list who have 4 element,
-;;  but get list who have 5 element.
+;;  but given list have 5 element.
 (is 'is-b-test-exception
     (letl (x y z a) '(1 2 3 4 5)
       (list* x y z a)))
@@ -408,3 +408,15 @@
 (is nil (test222 nil))
 (is '(12 12) (test223 12))
 (is nil (test223 nil))
+
+;; Bench marking
+;; (defpure +)
+;; 
+;; Known functions compiled intelligence way.
+;;(time
+;; (dotimes (i 10000000)
+;;   (funcall + 1 2)))
+;;(time
+;; (dotimes (i 10000000)
+;;   (+ 1 2)))
+

@@ -39,7 +39,7 @@
    #:+eof-object+
 
    #:^
-   ;; control
+   ;; flow control
    #:if-bind #:aif #:when-bind #:awhen #:and-bind #:aand
    #:dolist-do
    ;;
@@ -98,7 +98,8 @@
    #:const
    #:==
    #:/==
-
+   ;; #:defpure
+   
    ;; for testing
    #:scheme-test-function
    #:scheme-test-function2
@@ -129,7 +130,7 @@
       `(do* ,(append vars (list `(,%lis ,lis (cdr ,%lis)) `(,var (car ,%lis) (car ,%lis))))
             ((null ,%lis) ,@rest)
          ,@body)))
-  ;; control
+  ;; flow control
   (defmacro if-bind (var test then &rest else)
     `(let ((,var ,test))
        (if ,var ,then ,@else)))
@@ -168,12 +169,12 @@
        (defvar ,name nil)
        (setq ,name (symbol-function ',func))
        ;;(defconstant ,name (symbol-function ',func))
-       (setf (fdefinition ',name) (SYMBOL-FUNCTION ',FUNC)) ;;汎用的な方法を選んだ
+       (setf (fdefinition ',name) (SYMBOL-FUNCTION ',FUNC))
        ))
   
   (defmacro defun-alias (name func)
     `(progn
-       (setf (fdefinition ',name) (SYMBOL-FUNCTION ,FUNC)) ;;汎用的な方法を選んだ
+       (setf (fdefinition ',name) (SYMBOL-FUNCTION ,FUNC)) 
        ))
   
   (defun macroexpand-recursive (lis)
@@ -255,6 +256,7 @@
   ;; DISPLAY
   ;; symbol and keyword is case-insensitive
   ;; and complex number's format is #C(x y) not a a.b+c.di.
+  ;; gosh > (print 1+i) => 1.0+1.0i
    (defun display (obj &optional (stream *standard-output*))
     (format stream "~a" obj))
   
@@ -612,6 +614,10 @@
   (defun /== (a b)
     (not (equal a b)))
 
+  ;; func should be compiled.
+  ;;(defmacro defpure (func)
+  ;;  `(defconstant ,func (symbol-function ',func)))
+  
   ;; test
   (declaim (inline scheme-test-function))
   (defun-expand scheme-test-function (x)

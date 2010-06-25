@@ -1,0 +1,12 @@
+-*- encoding:utf-8 -*-
+
+Bugs: Japanese Only
+ 1. clとgaucheではcomplex の表示方法が違うので、display ,string->symbolが違う結果になる。
+ 2. (load "test.lisp") では日本語の文字列を読めなかった。
+ 3. symbol->string がkeywordを取ることができてしまう。
+ 4. file->list file->sexp-list file->string-list valuesを返す.
+ 5. 一部の関数を除いて、関数をsymbol-valueに入れていない。
+ 6. define が第2引数がsymbolで第3引数がfunctionの場合に関数テーブルに入れない。
+ 7. rxmatch-ifが場合によりwarnningを出すかもしれない。
+ 8, equal? がvector とvectorを中身を見て比べない。
+ 
