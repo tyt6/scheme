@@ -16,7 +16,7 @@
   :components ((:file "scheme")
                )
   :version "0.0.1"
-  :depends-on (fare-matcher cl-ppcre fare-utils)
+  :depends-on (fare-matcher cl-ppcre fare-utils parse-number)
   :perform (load-op :after (op scheme)
                     (pushnew :scheme cl:*features*)))
 

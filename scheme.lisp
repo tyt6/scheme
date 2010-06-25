@@ -29,8 +29,7 @@
 ;;;   NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 ;;;   SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ;;;  
-;;;  LastModified="2010-06-07 01:06:04"
-;;;  /scheme-like-library-in-common-lisp/scheme.lisp,v 0.0.0
+;;;  /scheme/scheme.lisp,v 0.0.0
 
 (defpackage :scheme
   (:use :common-lisp :fare-matcher
@@ -58,7 +57,8 @@
    #:display #:symbol? #:string? #:number? #:keyword? #:pair? #:null?
    #:x->string #:string->symbol #:symbol->string #:string->number
    #:define #:begin #:begin0 #:receive
-   #:let1 #:letp 
+   #:let1 #:letp
+   #:eq? #:eqv? #:equal?
    ;; port
    #:eof-object? #:file->list
    #:file->sexp-list #:file->string-list
@@ -66,10 +66,9 @@
    ;; util.match
    #:umatch #:letl
 
-   ;; srfi
-   ;; LIST
+   ;; srfi-1
    #:proper-list? #:dotted-list? #:circular-list?
-   #:iota
+   #:iota #:xcons
    #:cons*  #:circular-list
    #:take #:take*
    #:drop #:reverse! #:filter #:list-ref
@@ -116,14 +115,15 @@
   (defconstant +length*-dot+ -1)
   (defconstant +length*-circular+ -2)
   
-  (declaim (inline eof-object? hash-table-put! hash-table-get))
+  (declaim (inline eof-object? hash-table-get))
 
   (defmacro ^ (args &rest body)
     `(lambda ,args .,body))
   
   (defun symbol-eq-without-package (a b)
     (and (symbolp a) (symbolp b) (string= (symbol-name a) (symbol-name b))))
-
+  ;; (symbol-eq-without-package 'fare-matcher::match 'match)
+  
   (defmacro dolist-do  ((var lis &rest rest) vars &rest body)
     (let ((%lis (gensym "dolist-do")))
       `(do* ,(append vars (list `(,%lis ,lis (cdr ,%lis)) `(,var (car ,%lis) (car ,%lis))))
@@ -136,36 +136,38 @@
   
   (defmacro aif (test then &rest else)
     (let ((%it (intern (symbol-name 'it))))
-      (macroexpand `(if-bind ,%it ,test ,then ,@else))))
-
+      `(if-bind ,%it ,test ,then ,@else)))
+  
   (defmacro when-bind (var test &rest body)
-    (macroexpand `(if-bind ,var ,test (progn ,@body))))
+    `(if-bind ,var ,test (progn ,@body)))
 
   (defmacro awhen ( test &rest body)
     (let ((%it (intern (symbol-name 'it))))
-      (macroexpand `(when-bind ,%it ,test ,@body))))
+      `(when-bind ,%it ,test ,@body)))
 
   (defmacro and-bind (var &rest forms)
     (if (consp forms)
         (if (consp (cdr forms))
-            (macroexpand `(if-bind ,var ,(car forms)
-                                   ,(macroexpand `(and-bind ,var ,@(cdr forms)))
-                                   nil))
+            `(if-bind ,var ,(car forms)
+               (and-bind ,var ,@(cdr forms))
+               nil)
             (car forms))
         t))
 
   (defmacro aand (&body body)
     (let ((%it (intern (symbol-name 'it))))
-      (macroexpand `(and-bind ,%it ,@body))))
+      `(and-bind ,%it ,@body)))
 
-  (defmacro function->variable (func)
-    `(progn (defvar ,func  nil)
-            (setq ,func (symbol-function ',func))))
+  ;;(defmacro function->variable (func)
+  ;;  `(progn (defvar ,func  nil)
+  ;;          (setq ,func (symbol-function ',func))))
+  ;; (function->variable mapcar)
 
   (defmacro defun-alias-scheme (name func)
     `(progn
        (defvar ,name nil)
        (setq ,name (symbol-function ',func))
+       ;;(defconstant ,name (symbol-function ',func))
        (setf (fdefinition ',name) (SYMBOL-FUNCTION ',FUNC)) ;;汎用的な方法を選んだ
        ))
   
@@ -174,17 +176,13 @@
        (setf (fdefinition ',name) (SYMBOL-FUNCTION ,FUNC)) ;;汎用的な方法を選んだ
        ))
   
-  ;;(let ((lis (iota 1000000)))
-  ;;  (time (dotimes (i 10000) (listp  lis)))
-  ;;  (time (dotimes (i 10000) (consp  lis))))
   (defun macroexpand-recursive (lis)
+    ;; listp is better but a little bit slow
     (cond ((consp lis)
-           ;; listp is better but a little bit slow
            (macroexpand (cons (car lis) (mapcar #'macroexpand-recursive (cdr lis)))))
           (t lis)))
   
   (defmacro defun-expand  (name vars &body body)
-    ;;(print (mapcar #'macroexpand-recursive body))
     `(defun ,name ,vars
        ,@(mapcar #'macroexpand-recursive body)))
   
@@ -223,24 +221,25 @@
     (declare (optimize (speed 3) (safety 0) (debug 0) (compilation-speed 0) (space 0))
              (type function term))
     (if lis
-        (foldl1 term (funcall term (car lis) knil) (cdr lis))
+        (foldl1 term (funcall term knil (car lis)) (cdr lis))
         knil))
 
   (defun foldl2 (term knil lis lis2)
     (declare (optimize (speed 3) (safety 0) (debug 0) (compilation-speed 0) (space 0))
              (type function term))
     (if (and lis lis2)
-        (foldl2 term (funcall term (car lis) (car lis2) knil) (cdr lis) (cdr lis2))
+        (foldl2 term (funcall term  knil (car lis) (car lis2)) (cdr lis) (cdr lis2))
         knil))
-
-  (defun foldln (term knil llis)
-    (declare (optimize (speed 3) (safety 0) (debug 0) (compilation-speed 0) (space 0))
-             (type function term)
-             (type list llis))
-    (if (member nil llis)
-        knil
-        (foldln term (apply term knil (apply #'mapcar #'car llis)) (apply #'mapcar #'cdr llis))))
   
+  (defun foldln (term knil llis)
+    (declare (type function term)
+             (type list llis))
+    (if (member nil llis :test 'eq)
+        knil
+        (foldln term
+                (apply term knil (mapcar #'car llis))
+                (mapcar #'cdr llis))))
+    
   (defun foldl (term knil lis &rest rest)
     (declare (optimize (speed 3) (safety 0) (debug 0) (compilation-speed 0) (space 0))
              (type function term))
@@ -252,32 +251,51 @@
   
 
   ;; scheme like function
-  (defun display (obj &optional (stream *standard-output*))
+
+  ;; DISPLAY
+  ;; symbol and keyword is case-insensitive
+  ;; and complex number's format is #C(x y) not a a.b+c.di.
+   (defun display (obj &optional (stream *standard-output*))
     (format stream "~a" obj))
   
-  (defun-alias-scheme symbol? symbolp)
+  (defun symbol? (x)
+    (and (symbolp x) (not (keywordp x))))
   (defun-alias-scheme keyword? keywordp)
   
   (defun-alias-scheme string? stringp)
   (defun-alias-scheme number? numberp)
   (defun-alias-scheme pair? consp)
   (defun-alias-scheme null? null)
+  ;;
+  (defun-alias-scheme eq? eq)
+  (defun-alias-scheme eqv? eql)
+  ;; gauche's  `equal?` compares vector and vector.
+  (defun-alias-scheme equal? equal)
+  
 
+  ;; symbol and keyword is case-insensitive
+  ;; and complex number's format is #C(x y) not a a.b+c.di.
   (defun x->string (o)
     (format nil "~a" o))
+
+  ;; this is not good symbol->string take 2nd argument
   (defun-alias-scheme string->symbol intern)
+
+  ;; is not good this take :keywords
   (defun-alias-scheme symbol->string symbol-name)
-  (defun-alias-scheme string->number parse-integer)
+
+  ;;
+  (defun-alias-scheme string->number parse-number::parse-number)
 
   (defmacro begin (&body body)
-    (macroexpand `(progn ,@body)))
+    `(progn ,@body))
 
   (defmacro begin0 (&body body)
-    (macroexpand `(prog1 ,@body)))
+    `(prog1 ,@body))
 
   (defmacro receive (vars value &body body)
-    (macroexpand `(multiple-value-bind ,vars ,value
-                    ,@body)))
+    `(multiple-value-bind ,vars ,value
+       ,@body))
 
   (defmacro letp (name vars &rest body)
     (or (listp vars) (error "malformed letp (not list vars)"))
@@ -289,27 +307,30 @@
   (defmacro let1 (var val &body body)
     `(let ((,var ,val))
        .,body))
-
+  
   ;; not debugging
   (defmacro define (name+vars &body body)
     (let ((func (if (pair? name+vars) (car name+vars) name+vars)))
       (labels ((define-dot->rest (vars)
                  (letp lp ((vars vars) (ret '()))
-                   (if (consp (cdr vars))
-                       (lp (cdr vars) (cons (car vars) ret))
-                       (nreverse (list* vars '&rest ret))))))
+                   (cond ((consp vars)
+                          (lp (cdr vars) (cons (car vars) ret)))
+                         ((null vars)
+                          (nreverse ret))
+                         (t (nreverse (list* vars '&rest ret)))))))
         `(progn
-           ,(if (pair? name+vars)
+           ,(if (consp name+vars)
                 `(defun ,(car name+vars) ,(if (proper-list? (cdr name+vars))
                                               (cdr name+vars)
                                               (define-dot->rest (cdr name+vars)))
                    ,@body)
-                `(defun ,name+vars ,@body))
-           ;;           (defvar ,func  nil)
-           ;;           (setq ,func (symbol-function ',func))
+                ;; TODO : 
+                ;; (define x (lambda (y) y)) make intern function table
+                ;; (define x (cut + <> <>)) too.
+                `(defvar ,name+vars ,@body))
            ))))
   ;;  (define (x ) 1) 
-
+  
   ;; port
   (defun eof-object? (o)
     (eq o +eof-object+))
@@ -327,13 +348,14 @@
             (declare (type (or string keyword) sexp))
             (setf ret (cons sexp ret)))))))
 
-  
+  ;; gauche do not return multiple values.
   (defun file->sexp-list (path)
     (file->list #'read path))
-
+  
+  ;; gauche do not return multiple values.
   (defun file->string-list (path)
     (file->list #'read-line path))
-
+  
   (defun make-umatch-pattern (x)
     (cond  ;; ((and (consp x) (eq (car x) (slot*) ))
            ;;  ) ;; this must be recursive!
@@ -370,16 +392,18 @@
   ;; like gauche's util.match
   (defmacro umatch ( expr &body clause)
     (let ((ret '()))
-      (dolist (e clause (macroexpand `(fare-matcher::match ,expr ,@(nreverse ret))))
+      (dolist (e clause `(match ,expr ,@(nreverse ret)))
         (push (cons (make-umatch-pattern (car e)) (cdr e)) ret))))
-
+  
   ;; 
   (defmacro letl (pattern val &body body)
-    (macroexpand `(fare-matcher:letm ,(make-umatch-pattern pattern) ,val .,body)))
+    `(letm ,(make-umatch-pattern pattern) ,val .,body))
 
   ;; --------------------------------
   ;; srfi-1
   (defun-alias-scheme cons* list*)
+  (defun xcons (b a) (cons a b))
+    
   (defun length* (lis)
     (declare (optimize (speed 3) (safety 0) (debug 0) (compilation-speed 0) (space 0)))
     (letp lp ((slow lis)
@@ -449,7 +473,7 @@
   (defun list-ref(lis n)
     (nth n lis))
 
-  (defun take-while (pred lis)
+ (defun take-while (pred lis)
     (do ((ret '() (cons (car lis) ret))
          (lis lis (cdr lis)))
         ((not (and lis (funcall pred (car lis))))
@@ -501,13 +525,15 @@
   ;; --------------------------------
   ;; gauche
   (defmacro use (&rest args)
-    `(progn ,@(map* (p args) `(use-package p))))
+    `(progn ,@(mapcar #'use-package args)))
 
   ;; object
   (defun slot-ref (obj key &optional (def nil))
-    `(if (slot-boundp ,obj ,key)
-         (slot-value ,obj ,key)
-         ,def))
+    (if (slot-boundp obj key)
+        (slot-value obj key)
+        def))
+  (defun (setf slot-ref) (new-value obj key)
+    (setf (slot-value obj key) new-value))
 
   ;; --------------------------------
 
@@ -523,18 +549,22 @@
       (and start (lambda (i) (if (= i 0) (subseq str start end)(subseq str (aref sts (- i 1)) (aref ens (- i 1))))))))
   
   (defmacro rxmatch-if ((reg str) result then &body else)
-    (declare (optimize (speed 0)(safety 0)(debug 0) (compilation-speed 0) (space 0)))
     (with-gensyms (%str  %sts %ens %start %end)
-      (let1 result? (symbol-eq-without-package (car result) '_)
+      (let ((result? (symbol-eq-without-package (car result) '_))
+            (nullstr? (and (stringp str) (string= str ""))))
         `(let* ((,%str ,str))
            (multiple-value-bind (,%start ,%end ,%sts ,%ens) (rxbase ,reg ,%str)
-             ,@(if result? `((declare (ignorable ,%end))) nil)
+             ,@(if result? `((declare (ignorable ,%end ,@(if nullstr? (list %ens) nil)))) nil)
              (if ,%start
-                 (let ,(let ((sexp (mapcar (lambda (var i) `(,var (if-bind it (aref ,%sts ,i) (subseq ,%str it (aref ,%ens ,i)))))
+                 (let ,(let ((sexp (mapcar (lambda (var i) (if nullstr?
+                                                               `(,var (scheme::if-bind it (aref ,%sts ,i) ""))
+                                                               `(,var (scheme::if-bind it (aref ,%sts ,i) (subseq ,%str it (aref ,%ens ,i))))))
                                            (cdr result) (iota (length (cdr result))))))
                             (if result?
                                 sexp
-                                (cons `(,(car result) (subseq ,%str ,%start ,%end))
+                                (cons (if nullstr?
+                                          (list (car result) "")
+                                          `(,(car result) (subseq ,%str ,%start ,%end)))
                                       sexp)))
                    ,then)
                  ,@else))))))

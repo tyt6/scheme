@@ -24,7 +24,9 @@
                        ((error (lambda (e) (declare (ignorable e))(return-from is-b 'is-b-test-exception)) ))
                      ,test))))
             (if (equal tyt-is-a tyt-is-b)
-                (format t "ok~%")
+                (progn
+                  (format t "ok~%")
+                  t)
                 ;; format
                 (progn
                   (mapcar #'princ
@@ -32,14 +34,51 @@
                            "predict " (prin1-to-string tyt-is-a)
                            ", but got" (prin1-to-string tyt-is-b)
                            ))
-                  (format t "~%"))))
-          t))
+                  (format t "~%")
+                  nil)))))
 
 ;; intern is case-sensitive
 (is 'it (intern (symbol-name 'it)))
 (is 'it (intern (subseq (symbol-name 'it1) 0 2)))
 (is '|it| (intern(subseq (format nil "~a" (intern "it1")) 0 2)))
 (is 'IT  (intern "IT"))
+
+;; ^  alias-for lambda
+(is  1 (funcall (^ (x) x) 1))
+(is '(4 3 2 1)
+    (dolist-do (e '(1 2 3 4 ) ret)
+        ((ret '() (cons e ret)))))
+
+(is 1
+    (if-bind it 1
+      it))
+
+(is 1
+    (aif 1
+      it))
+
+(is 1
+    (when-bind it 1
+      12345
+      it))
+
+(is 1
+    (awhen 1
+      12345
+      it))
+
+(is 3
+    (and-bind it 1
+              2
+              3
+              it))
+
+(is 3
+    (aand  1
+           2
+           3
+           it))
+
 
 ;;;; let1
 (is 3 (let1 it (+ 1 2) it))
@@ -52,7 +91,125 @@
           ret)))
 (is nil (letp lp () nil))
 
-;; let-match test
+;; pathname
+(is  t (and (rxmatch "/home/[a-zA-Z0-9]+/lisp" (x->string(expand-home "lisp"))) t))
+
+;; This may be a security hole in rare case.
+(is "abadcafe"
+    (progn
+      (with-output-file (oport "/tmp/scheme-test-a.txt")
+        (format oport "abad~a" "cafe"))
+      (with-input-file (iport "/tmp/scheme-test-a.txt")
+        (read-line iport nil 1))
+      ))
+;; unlink "/tmp/scheme-test-a.txt"
+(is
+ '(3 2 1)
+ (foldl #'xcons nil '(1 2 3)))
+
+(is
+ '(3 6 2 5 1 4) 
+ (foldl (^ (kn x y) (cons* x y kn )) nil '(1 2 3) '(4 5 6) ))
+
+(is
+ '(3 6 9 2 5 8 1 4 7)
+ (foldl (^ (kn x y z) (cons* x y z kn)) nil '(1 2 3) '(4 5 6) '(7 8 9) ))
+
+(is
+ '(3 6 9 2 5 8 1 4 7)
+ (foldln (^ (kn x y z) (cons* x y z kn)) nil '((1 2 3) (4 5 6) (7 8 9))))
+
+
+(is
+ "test"
+ (with-output-to-string (*standard-output*)
+   (display "test")))
+
+(is
+ "test"
+ (with-output-to-string (out)
+   (display "test" out)))
+
+;; displaying symbol is case-issensitive
+;; and complex number's format is #C(x y).
+(is
+ "(test 'TESTS TESTK 1 1.1 1/4 #C(1 2))"
+ (with-output-to-string (out)
+   (display '("test" 'tests :testk 1 1.1 1/4 #c(1 2)) out)))
+
+;;(display '("test" 'tests :testk 1 1.1 1/4 1+2i)) => "(test 'tests testk 1 1.1 1/4 1.0+2.0i)"
+
+(is t (symbol? 'eq))
+;; this is not keywordp
+(is nil (symbol? :eq))
+(is t (eq (symbol? :eq) (not (symbolp :eq))))
+
+(is t (keyword? :eq))
+(is '(t t nil) (mapcar string? '("" "" eq)))
+(is '(t t t t nil nil)
+    (mapcar number?
+            '(1 1.1 1/4 #C(1 1) (1) #(1))))
+
+;; (is '(t t t t nil nil) (map number? '(1 1.1 1/4 1+i (1) #(1))))
+
+(is '(nil nil t) (mapcar pair? '(() 1 (1 . 2))))
+(is '(t nil nil) (mapcar null? '(() 1 (1 . 2))))
+(is  "(1 test TESTK TESTS #C(1 2))" (x->string '(1 "test" :testk tests #c(1 2))))
+
+(is  "(1 test TESTK TESTS #C(1 2))" (x->string '(1 "test" :testk tests #c(1 2))))
+;; string->symbol  is case-sensitive
+(is  '|it| (string->symbol "it"))
+(is 'IT (string->symbol "IT"))
+
+;; this is not good symbol->string take 2nd argument
+(is nil (eq 'it (string->symbol "IT" :scheme)))
+
+;; symbol->string
+;; is case-insensitive & this can take keywords.
+(is "TEST" (symbol->string 'test))
+;; (is 'is-b-test-exception (symbol->string :test))
+
+
+(is '(1 1.1 1/4 #C(1 1))
+    (mapcar string->number '("1" "1.1" "1/4" "#C(1 1)")))
+
+(is 5 (begin 1 3 4 5))
+(is 1 (begin0 1 3 4 5))
+(is 5 (receive (x y) (values 1 4)
+        (+ x y)))
+(is 5 (let1 x 1 (+ x 4)))
+(define (test-x x . xs) (apply '* (+ 1 x) xs))
+(is 36 (test-x 5 2 3))
+
+(is
+ t
+ (progn
+   (with-output-file (oport "/tmp/scheme-test-a.txt")
+     (format oport ""))
+   (eof-object?
+    (print 
+     (with-input-file (iport "/tmp/scheme-test-a.txt")
+       (read-line iport nil +eof-object+))))))
+
+(is nil (equal #(1) #(1)))
+
+;; gauche do not return multiple values.
+(is (list '( (1 2)
+            ("test" #C(1 2) )
+            ) t)
+    (progn
+      (with-output-file (oport "/tmp/scheme-test-a.txt")
+        (format oport "(1 2) ( \"test\" #C(1 2)) "))
+      (multiple-value-list (file->sexp-list "/tmp/scheme-test-a.txt"))))
+
+;; gauche do not return multiple values.
+(is '(("test1""test2""test3") t)
+    (progn
+      (with-output-file (oport "/tmp/scheme-test-a.txt")
+        (format oport "test1~%test2~%test3"))
+      (multiple-value-list (file->string-list "/tmp/scheme-test-a.txt"))))
+
+;; letl test
 (is 1
     (letl (x) '(1)
       x))
@@ -61,35 +218,19 @@
     (letl (x y) '(1 2)
       (cons x y)))
 
-(is '(1 2 . 3)
-    (letl (x y z) '(1 2 3)
-      (list* x y z)))
-
 ;; This pattern is not match. Because of pattern is list who have 4 element,
 ;;  but get list who have 5 element.
 (is 'is-b-test-exception
     (letl (x y z a) '(1 2 3 4 5)
       (list* x y z a)))
 
-(is '(1 2  3 4 . 5)
-    (letl (x y z a b) '(1 2 3 4 5)
-      (list* x y z a b)))
-
 (is '(1 2)
     (letl (x . y) '(1 2)
       (cons x y)))
 
-(is '(1 2 3)
-    (letl (x y . z) '(1 2 3)
-      (list* x y z)))
-
 (is '(1 2 3 4 5)
     (letl (x y z . a) '(1 2 3 4 5)
       (list* x y z a)))
-
-(is '(1 2  3 4 5)
-    (letl (x y z a . b) '(1 2 3 4 5)
-      (list* x y z a b)))
 
 (is '(1 2 (1 2) 3)
     (letl ((x y) . res) '((1 2) (1 2) 3)
@@ -99,26 +240,6 @@
     (letl   ( (x1  x2  x3) . res1)  '((1 2 3 4 5) 6)
       (cons* x1 x2 x3 res1)))
 
-(is '(1 (2) (1 2) 3)
-    (letl ((x . y) z . res) '((1 2) (1 2) 3)
-      (cons* x y z res)))
-
-(is '(1 2 (1 2) 3)
-    (letl ((x y) z . res) '((1 2) (1 2) 3)
-      (cons* x y z res)))
-
-(is '(1 (2) (1 2) 3)
-    (letl ((x . xs) . res) '((1 2) (1 2) 3)
-      (cons* x xs res)))
-
-(is '(1 2 (3 4 5) 6)
-    (letl   ( (x1  x2 . xs) . res1)  '((1 2 3 4 5) 6)
-      (cons* x1 x2 xs res1)))
-
-(is '(1 2 3 (4 5) 6)
-    (letl   ( (x1 x2 x3 . xs) . res1)  '((1 2 3 4 5) 6)
-      (cons* x1 x2 x3 xs res1)))
-
 (is '(1 2 1 2 3)
     (letl ((x1 x2) (y1 y2) . res) '((1 2) (1 2) 3)
       (cons* x1 x2 y1 y2 res)))
@@ -127,21 +248,9 @@
     (letl ((x . xs) (y . ys) . res) '((1 2) (1 2) 3)
       (cons* x xs y ys res)))
 
-(is '(30 31 ((32 33) 21)  1)
-    (letl (((x1 x2) . res2) . res1) '(((30 31) (32 33) 21) 1)
-      (cons* x1 x2 res2 res1)))
-
 (is '(30 (31) ((32 33) 21)  1)
     (letl (((x1 . xs) . res2) . res1) '(((30 31) (32 33) 21) 1)
       (cons* x1 xs res2 res1)))
-
-(is '(30 (31) ((32 33) 21)  1)
-    (letl (((x1 . xs) . res2) . res1) '(((30 31) (32 33) 21) 1)
-      (cons* x1 xs res2 res1)))
-
-(is '(30 (31) (32 33) (21) 1)
-    (letl   ( ( (x1 . x2) y1 . y2) . res1)  '(((30 31) (32 33) 21) 1)
-      (cons* x1 x2 y1 y2 res1)))
 
 (is '(30 (31) (32 33) (21) 1) 
     (letl   ( ( (x1 . x2) . (y1 . y2) ) . res1)  '(((30 31) (32 33) 21) 1)
@@ -155,10 +264,10 @@
       (_ t)))
 
 (is 2
-     (umatch '(sym b)
-       ( ('sy .  xs)  1)
-       ( ('sym .  xs)  2)
-       (_ t)))
+    (umatch '(sym b)
+      ( ('sy .  xs)  1)
+      ( ('sym .  xs)  2)
+      (_ t)))
 
 (is 2
     (umatch '(12345678 b)
@@ -208,6 +317,85 @@
 (is nil ;; '(1 3)
     (umatch (make-instance 'bar :x 1 :y 2 :z 3)
       ((accessor* (foo-x a) (bar-z b)) (list a b))))
+
+(is t (proper-list? '(1 2)))
+(is nil (circular-list? '(1 2)))
+(is nil (dotted-list? '(1 2)))
+
+(is nil (proper-list? (cons 1 2)))
+(is nil (circular-list? (cons 1 2)))
+(is t (dotted-list? (cons 1 2)))
+
+(is nil (proper-list? (circular-list 1 2)))
+(is t (circular-list? (circular-list 1 2)))
+(is nil (dotted-list? (circular-list 1 2)))
+
+(is 4950 (apply #'+ (iota 100)))
+
+(is 'is-b-test-exception (take 100 '()))
+(is '(1 2) (take 2 '(1 2 3)))
+
+(is '() (take* 100 '()))
+(is '(1 2) (take* 2 '(1 2 3)))
+
+(is 'is-b-test-exception (drop 100 '()))
+(is '(3) (drop 2 '(1 2 3)))
+(is '(1 3 5 7 9) (filter 'oddp (iota 10)))
+(is 4 (list-ref (iota 10) 4))
+(is (iota 10 10)(take-while (cut < <> 20) (iota 20 10)))
+(is "13c" (string-append "1" "3" "c"))
+;; (is "13cあ" (string-append "1" "3" "c" "あ"))
+
+(use :parse-number)
+(is 1 (parse-number"1"))
+
+(defclass <x> ()
+  (x))
+
+(is 1
+    (let((x (make-instance '<x> )))
+      (setf (slot-ref x 'x) 1)
+      (slot-ref x 'x)))
+(is nil (rxmatch "^test" "sx"))
+(is "1234"  (funcall (rxmatch "^test([0-9]+)" "test1234") 1))
+(is '("1234" "abad" "CAFE")
+    (rxmatch-if ("^test([0-9]+)([a-z]+)([A-Z]+)$" "test1234abadCAFE")
+        (_ num az laz) (list num az laz)))
+
+(is :nil
+    (rxmatch-if ("^test([0-9]+)([a-z]+)([A-Z]+)$" "")
+        (_ num az laz) (list num az laz)
+      :nil))
+
+(rxmatch-if ("^test([0-9]+)([a-z]+)([A-Z]+)$" "")
+        (_ num az laz) (list num az laz)
+      :nil)
+
+
+(defun sort-alist (alist &key (test #'<))
+  (sort alist (^ (a b) (funcall test (car a) (car b)))))
+
+(let ((ht (make-hash-table :test #'equal)))
+  (hash-table-put! ht "test" 1)
+  (hash-table-put! ht "test3" 4)
+  (is '(1 :nil)
+      (list (hash-table-get ht "test") (hash-table-get ht "test2" :nil)))
+  (is '(("test" . 1) ("test3" . 4))
+      (sort-alist (hash-table->alist ht) :test #'string<))
+  (is '("test" "test3")
+      (sort (hash-table-keys ht) #'string<))
+  (is '(1 4)
+      (sort (hash-table-values ht) #'<))
+  )
+
+
+(is '(1 2 3 4 5)
+    (nub '(1 2 1 2 1 2 3 4 5)))
+(is '(1 1 1 1 1) (mapcar (const 1) '(1 2 3 4 5)))
+;; (is '( ) (mapcar (const (random 26)) (iota 10)))
+(is t (== '(1 2 3) '( 1 2 3)))
+(is t (/== '(1 2 3) '( 1 2 3 4)))
+;; nub [1,2,1,2,1,2,3,4,5]
 
 ;; inline aif
 (defun test222(x)
