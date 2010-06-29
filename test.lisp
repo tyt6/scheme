@@ -169,6 +169,14 @@
 
 ;; (is 'is-b-test-exception (symbol->string :test))
 
+;; This test will pass only first time.
+(is 'is-b-test-exception
+    (mapcar proper-list? '()))
+
+(function-to-variable-table)
+
+(is '()
+    (mapcar proper-list? '()))
 
 (is '(1 1.1 1/4 #C(1 1))
     (mapcar string->number '("1" "1.1" "1/4" "#C(1 1)")))
@@ -180,6 +188,14 @@
 (is 5 (let1 x 1 (+ x 4)))
 (define (test-x x . xs) (apply '* (+ 1 x) xs))
 (is 36 (test-x 5 2 3))
+(let ((x 99)
+      (y nil))
+  (is 101 (inc! x 2))
+  (is 102 (inc! x))
+  (is 101 (dec! x))
+  (is 99 (dec! x 2))
+  (push! y 1)
+  (is '(1)  y))
 
 (is
  t
@@ -192,6 +208,8 @@
        (read-line iport nil +eof-object+))))))
 
 (is nil (equal #(1) #(1)))
+(is nil (equal (lambda (x) x) (lambda (x) x)))
+
 
 ;; gauche do not return multiple values.
 (is (list '( (1 2)
@@ -318,6 +336,10 @@
     (umatch (make-instance 'bar :x 1 :y 2 :z 3)
       ((accessor* (foo-x a) (bar-z b)) (list a b))))
 
+(is t (proper-list? '()))
+(is nil (proper-list? 'a))
+(is t (dotted-list? 'a))
+
 (is t (proper-list? '(1 2)))
 (is nil (circular-list? '(1 2)))
 (is nil (dotted-list? '(1 2)))
@@ -343,8 +365,45 @@
 (is '(1 3 5 7 9) (filter 'oddp (iota 10)))
 (is 4 (list-ref (iota 10) 4))
 (is (iota 10 10)(take-while (cut < <> 20) (iota 20 10)))
+
+;; string
+(is #\t (string-ref "test" 0))
+(let* ((x "2")
+       (y (string-copy x)))
+  (setf (aref x 0) #\3)
+  (is "3" x)
+  (is "2" y))
+
+(is (list #\a #\b #\c)(string->list "abc"))
+(is "abc"(list->string '(#\a #\b #\c)))
+(is "a,b,c" (string-join '("a" "b" "c") ","))
 (is "13c" (string-append "1" "3" "c"))
+(is "abc" (string-concatenate '("a" "b" "c")))
+(is '("a" "b" "c") (string-split "a,b,c" #\,))
+;;(is '("a" "b" "c") (string-split "a,b,c" ","))
+(is "test" (string-trim-both " test "))
+
+(is " " (string-trim-both "test test" "test"))
 ;; (is "13cあ" (string-append "1" "3" "c" "あ"))
+;; 
+;; (string-split "/aa/bb//cc" #\/)    => ("" "aa" "bb" "" "cc")
+;; (string-split "/aa/bb//cc" "/")    => ("" "aa" "bb" "" "cc")
+;; (string-split "/aa/bb//cc" "//")   => ("/aa/bb" "cc")
+;; (string-split "/aa/bb//cc" #[/])   => ("" "aa" "bb" "cc")
+;; (string-split "/aa/bb//cc" #/\/+/) => ("" "aa" "bb" "cc")
+;; (string-split "/aa/bb//cc" #[\w])  => ("/" "/" "//" "")
+;; (string-split "/aa/bb//cc" char-alphabetic?) => ("/" "/" "//" "")
+;; 
+;; ;; some boundary cases
+;; (string-split "abc" #\/) => ("abc")
+;; (string-split ""    #\/) => ("")
+
+(is
+ '((3 6 9) 3)
+ (let ((x 2))
+   (list
+    (mapcar (cute * (inc! x 1) <>) '(1 2 3))
+    x)))
 
 (use :parse-number)
 (is 1 (parse-number"1"))
@@ -356,6 +415,17 @@
     (let((x (make-instance '<x> )))
       (setf (slot-ref x 'x) 1)
       (slot-ref x 'x)))
+
+(is 2
+    (assoc-ref '((a . 2) (b . 3)) 'a))
+
+(is 3
+    (assoc-ref '((a . 2) (b . 3)) 'b))
+
+(is 4
+    (assoc-ref '((a . 2) (b . 3)) 'c 4))
+
+;; rxmatch
 (is nil (rxmatch "^test" "sx"))
 (is "1234"  (funcall (rxmatch "^test([0-9]+)" "test1234") 1))
 (is '("1234" "abad" "CAFE")
@@ -371,9 +441,8 @@
         (_ num az laz) (list num az laz)
       :nil)
 
-
 (defun sort-alist (alist &key (test #'<))
-  (sort alist (^ (a b) (funcall test (car a) (car b)))))
+  (sort alist test :key #'car))
 
 (let ((ht (make-hash-table :test #'equal)))
   (hash-table-put! ht "test" 1)
@@ -409,7 +478,17 @@
 (is '(12 12) (test223 12))
 (is nil (test223 nil))
 
-;; Bench marking
+(is '(3 nil)
+    (umatch '(1 :plus 2)
+      ((x :plus y . xs) (list (+ x y) xs))))
+
+(is 3
+    (letl (x :plus y) '(1 :plus 2)
+      (+ x y)))
+
+
+
+;; Bench Marking
 ;; (defpure +)
 ;; 
 ;; Known functions compiled intelligence way.
